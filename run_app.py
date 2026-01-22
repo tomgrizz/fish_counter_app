@@ -4,6 +4,8 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import webbrowser
 
 
@@ -26,13 +28,19 @@ def main() -> int:
 
     process = subprocess.Popen(streamlit_cmd)
 
-    for _ in range(30):
+    browser_opened = False
+    for _ in range(60):
         time.sleep(0.5)
         try:
-            webbrowser.open(url)
-            break
-        except Exception:
+            with urllib.request.urlopen(url, timeout=1):
+                pass
+        except (urllib.error.URLError, TimeoutError):
             continue
+
+        if not browser_opened:
+            webbrowser.open(url)
+            browser_opened = True
+            break
 
     return process.wait()
 
