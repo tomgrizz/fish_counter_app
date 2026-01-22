@@ -41,6 +41,8 @@ def main() -> int:
         str(port),
         "--server.headless",
         "true",
+        "--global.developmentMode",
+        "false",
     ]
     streamlit_cmd = [
         sys.executable,
