@@ -122,40 +122,44 @@ def upsert_events(conn: sqlite3.Connection, rows: List[Dict[str, object]]) -> No
     conn.commit()
 
 
-def find_first_arv(project_root: Path) -> Optional[Path]:
-    for p in project_root.glob("*.Arv"):
+def find_first_log(project_root: Path) -> Optional[Path]:
+    for p in project_root.glob("*.log"):
         return p
-    for p in project_root.glob("*.ARV"):
+    for p in project_root.glob("*.LOG"):
         return p
     return None
 
 
-def parse_arv(arv_path: Path) -> Tuple[List[Dict[str, object]], Dict[str, object]]:
-    """Parse a Riverwatcher *.Arv export into event rows.
+def parse_log(log_path: Path) -> Tuple[List[Dict[str, object]], Dict[str, object]]:
+    """Parse a Riverwatcher *.log export into event rows.
 
-    This parser assumes the [data] section contains one "folder stamp" row (YY MM DD HH MM)
+    This parser assumes a [data] section may contain one "folder stamp" row (YY MM DD HH MM)
     followed by event rows that look like:
       <id> <m1> <m2> <month> <day> <hour> <minute> <+/-> <m3>
     """
     diagnostics: Dict[str, object] = {
-        "arv_path": str(arv_path),
+        "log_path": str(log_path),
         "events_parsed": 0,
         "folder_stamp": None,
     }
 
     rows: List[Dict[str, object]] = []
     in_data = False
+    saw_data_marker = False
     base_year: Optional[int] = None
 
-    with arv_path.open("r", errors="replace") as f:
+    with log_path.open("r", errors="replace") as f:
         for raw in f:
             line = raw.strip()
             if not line:
                 continue
+            if line.startswith(("#", ";")):
+                continue
             if line.lower() == "[data]":
                 in_data = True
+                saw_data_marker = True
                 continue
-            if not in_data:
+            if saw_data_marker and not in_data:
                 continue
 
             parts = line.split()
@@ -220,11 +224,11 @@ def index_videos(video_index_root: Path) -> Dict[str, Path]:
 
 
 def build_event_rows(project_root: Path, video_library_root: Path, video_index_root: Path) -> Tuple[List[Dict[str, object]], Dict[str, object]]:
-    arv = find_first_arv(project_root)
-    if not arv:
-        raise FileNotFoundError("No .Arv file found in Project root.")
+    log_file = find_first_log(project_root)
+    if not log_file:
+        raise FileNotFoundError("No .log file found in Project root.")
 
-    parsed, diag = parse_arv(arv)
+    parsed, diag = parse_log(log_file)
     vidx = index_videos(video_index_root)
 
     rows: List[Dict[str, object]] = []
@@ -396,7 +400,7 @@ init_state()
 with st.sidebar:
     st.header("Project")
     st.text_input(
-        "Project root (contains .Arv)",
+        "Project root (contains .log)",
         key="project_root",
         placeholder=r"C:\...\Ganaraska 2025\10312025-11282025",
     )
@@ -535,8 +539,6 @@ with right:
     if not cats:
         cats = ["Chinook", "Rainbow", "Unknown", "Non fish"]
 
-    nonfish_names = {"non fish", "nonfish", "false", "false trigger"}
-
     st.caption("Click species to add 1 fish at the selected movement. Use Undo for mistakes, then Save & Next.")
 
     # Buttons grid
@@ -555,18 +557,8 @@ with right:
                 clicked = cat
 
     if clicked is not None:
-        if clicked.strip().lower() in nonfish_names:
-            # Mark false trigger and advance
-            reviewed_at = datetime.now().isoformat(timespec="seconds")
-            save_event(conn, event_id, {}, notes="", false_trigger=1, reviewed_at=reviewed_at)
-            # Advance
-            st.session_state.queue = get_unreviewed_event_ids(conn)
-            st.session_state.current_event_id = st.session_state.queue[0] if st.session_state.queue else None
-            st.session_state._loaded_event_id = None
-            st.rerun()
-        else:
-            add_observation(clicked, movement)
-            st.rerun()
+        add_observation(clicked, movement)
+        st.rerun()
 
     # Quick tools
     b1, b2 = st.columns(2)
@@ -624,6 +616,38 @@ colA.metric("Total events", summary["total_events"])
 colB.metric("Videos matched", summary["with_video"])
 colC.metric("Reviewed", summary["reviewed"])
 colD.metric("Remaining", max(summary["total_events"] - summary["reviewed"], 0))
+
+st.subheader("Counts summary")
+summary_rows = conn.execute(
+    """
+    SELECT e.event_id, e.ts, c.species, c.movement, c.count
+    FROM counts c
+    JOIN events e ON e.event_id = c.event_id
+    WHERE c.count > 0
+    ORDER BY e.ts ASC, CAST(e.event_id AS INTEGER) ASC, c.species ASC, c.movement ASC
+    """
+).fetchall()
+
+expanded_records: List[Dict[str, str]] = []
+for row in summary_rows:
+    for _ in range(int(row["count"])):
+        expanded_records.append(
+            {
+                "Event #": row["event_id"],
+                "Time stamp": row["ts"],
+                "Fish species": row["species"],
+                "Up or down": row["movement"],
+            }
+        )
+
+summary_df = pd.DataFrame(
+    expanded_records,
+    columns=["Event #", "Time stamp", "Fish species", "Up or down"],
+)
+if summary_df.empty:
+    st.info("No fish counted yet.")
+else:
+    st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
 with st.expander("Diagnostics", expanded=False):
     st.write(st.session_state.diagnostics)
