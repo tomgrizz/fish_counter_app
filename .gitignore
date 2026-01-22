@@ -5,3 +5,28 @@ __pycache__/
 .streamlit/
 .pytest_cache/
 
+# Virtual environments
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Streamlit
+.streamlit/
+
+# Test/Tool caches
+.pytest_cache/
+
+# Build outputs (PyInstaller)
+build/
+dist/
+
+# Logs
+*.log
+
+.vscode/
+
+
+.venv/
+
