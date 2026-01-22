@@ -29,6 +29,11 @@ pip install -r requirements.txt
 streamlit run app/streamlit_app.py
 ```
 
+## Build a Windows installer
+
+See `docs/BUILD_WINDOWS.md` for a walkthrough that packages the app with PyInstaller
+and creates a click-to-install setup executable using Inno Setup.
+
 ## Data inputs
 
 1. **Project root**: A folder containing the Riverwatcher `.log` file.
