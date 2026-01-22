@@ -20,6 +20,7 @@ pyinstaller `
     --name FishCounterReview `
     --noconsole `
     --clean `
+    --copy-metadata "streamlit" `
     --add-data "app;app" `
     --add-data "requirements.txt;." `
     --distpath $DistDir `
