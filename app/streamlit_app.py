@@ -213,13 +213,22 @@ def parse_log(log_path: Path) -> Tuple[List[Dict[str, object]], Dict[str, object
     return rows, diagnostics
 
 
+def _normalize_event_id(event_id: str) -> str:
+    cleaned = str(event_id).strip()
+    if cleaned.isdigit():
+        return cleaned.lstrip("0") or "0"
+    return cleaned
+
+
 def index_videos(video_index_root: Path) -> Dict[str, Path]:
     """Index mp4s by stem (event id)."""
     idx: Dict[str, Path] = {}
     for p in video_index_root.rglob("*.mp4"):
         stem = p.stem.strip()
-        if stem:
-            idx.setdefault(stem, p)
+        if not stem:
+            continue
+        idx.setdefault(stem, p)
+        idx.setdefault(_normalize_event_id(stem), p)
     return idx
 
 
@@ -229,13 +238,18 @@ def build_event_rows(project_root: Path, video_library_root: Path, video_index_r
         raise FileNotFoundError("No .log file found in Project root.")
 
     parsed, diag = parse_log(log_file)
+    if not parsed:
+        raise ValueError(
+            "No events were parsed from the .log file. Check that the log contains a [data] section "
+            "with event rows and that the project root points to the correct folder."
+        )
     vidx = index_videos(video_index_root)
 
     rows: List[Dict[str, object]] = []
     matched = 0
     for r in parsed:
         eid = str(r["event_id"])
-        vpath = vidx.get(eid)
+        vpath = vidx.get(eid) or vidx.get(_normalize_event_id(eid))
         has_video = 1 if vpath else 0
         if has_video:
             matched += 1
