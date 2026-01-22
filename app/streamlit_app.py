@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -147,6 +148,10 @@ def parse_log(log_path: Path) -> Tuple[List[Dict[str, object]], Dict[str, object
     in_data = False
     saw_data_marker = False
     base_year: Optional[int] = None
+    fish_event_re = re.compile(
+        r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?) - "
+        r"Fish measurement received with ID (?P<event_id>\d+)\s*$"
+    )
 
     with log_path.open("r", errors="replace") as f:
         for raw in f:
@@ -160,6 +165,27 @@ def parse_log(log_path: Path) -> Tuple[List[Dict[str, object]], Dict[str, object
                 saw_data_marker = True
                 continue
             if saw_data_marker and not in_data:
+                continue
+
+            if not saw_data_marker:
+                match = fish_event_re.match(line)
+                if match:
+                    ts_raw = match.group("ts")
+                    try:
+                        ts_dt = datetime.fromisoformat(ts_raw)
+                        ts = ts_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        ts = ts_raw.split(".")[0]
+                    rows.append(
+                        {
+                            "event_id": match.group("event_id"),
+                            "ts": ts,
+                            "raw_dir": "",
+                            "m1": None,
+                            "m2": None,
+                            "m3": None,
+                        }
+                    )
                 continue
 
             parts = line.split()
