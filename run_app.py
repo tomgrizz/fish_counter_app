@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 import webbrowser
@@ -123,6 +124,7 @@ def main() -> int:
         "-m",
         *cli_args,
     ]
+    _log_message(f"Streamlit args: {' '.join(cli_args)}")
 
     if open_browser:
         threading.Thread(
@@ -137,7 +139,22 @@ def main() -> int:
         import streamlit.web.cli as stcli
 
         sys.argv = cli_args
-        return int(stcli.main() or 0)
+        log_path = _get_log_path()
+        try:
+            with open(log_path, "a", encoding="utf-8") as handle:
+                original_stdout = sys.stdout
+                original_stderr = sys.stderr
+                sys.stdout = handle
+                sys.stderr = handle
+                try:
+                    return int(stcli.main() or 0)
+                finally:
+                    sys.stdout = original_stdout
+                    sys.stderr = original_stderr
+        except Exception as error:
+            _log_exception("Streamlit failed to start", error)
+            _notify_startup_failure(url, show_failure_notice)
+            return 1
 
     process = subprocess.Popen(streamlit_cmd)
     return process.wait()
