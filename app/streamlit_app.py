@@ -545,7 +545,7 @@ with left:
     st.subheader(f"Event {cur['event_id']}")
     st.caption(f"Timestamp: {cur['ts']}  |  Video: {cur['video_rel'] or '(not found)'}")
     if cur["has_video"] and cur["video_abs"]:
-        st.video(cur["video_abs"])
+        st.video(cur["video_abs"], autoplay=True, muted=True)
     else:
         st.warning("No video matched for this event ID.")
 
