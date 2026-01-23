@@ -67,10 +67,15 @@ def _log_message(message: str) -> None:
         pass
 
 
-def _log_exception(context: str, error: BaseException) -> None:
-    _log_message(f"{context}: {error}")
-    for line in traceback.format_exc().splitlines():
-        _log_message(line)
+def _select_port(preferred_port: int) -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("127.0.0.1", preferred_port))
+            return preferred_port
+        except OSError:
+            sock.bind(("127.0.0.1", 0))
+            return sock.getsockname()[1]
 
 
 def _select_port(preferred_port: int) -> int:
@@ -100,7 +105,7 @@ def main() -> int:
         f"Starting Fish Counter Review on {url} (open_browser={open_browser})."
     )
 
-    headless_mode = "true"
+    headless_mode = "false" if open_browser else "true"
     cli_args = [
         "streamlit",
         "run",
