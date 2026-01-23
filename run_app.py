@@ -34,6 +34,7 @@ def main() -> int:
         "yes",
     }
 
+    headless_mode = "false" if open_browser else "true"
     cli_args = [
         "streamlit",
         "run",
@@ -41,7 +42,7 @@ def main() -> int:
         "--server.port",
         str(port),
         "--server.headless",
-        "true",
+        headless_mode,
         "--global.developmentMode",
         "false",
     ]
