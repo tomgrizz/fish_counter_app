@@ -77,6 +77,17 @@ def _select_port(preferred_port: int) -> int:
             return sock.getsockname()[1]
 
 
+def _select_port(preferred_port: int) -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("127.0.0.1", preferred_port))
+            return preferred_port
+        except OSError:
+            sock.bind(("127.0.0.1", 0))
+            return sock.getsockname()[1]
+
+
 def main() -> int:
     app_path = os.path.join(os.path.dirname(__file__), "app", "streamlit_app.py")
     preferred_port = int(os.environ.get("FISH_COUNTER_PORT", "8501"))
@@ -93,7 +104,7 @@ def main() -> int:
         f"Starting Fish Counter Review on {url} (open_browser={open_browser})."
     )
 
-    headless_mode = "true"
+    headless_mode = "false" if open_browser else "true"
     cli_args = [
         "streamlit",
         "run",
