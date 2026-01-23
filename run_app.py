@@ -116,6 +116,8 @@ def main() -> int:
         "127.0.0.1",
         "--server.headless",
         headless_mode,
+        "--browser.gatherUsageStats",
+        "false",
         "--global.developmentMode",
         "false",
     ]
