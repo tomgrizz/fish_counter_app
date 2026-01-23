@@ -27,12 +27,14 @@ def main() -> int:
     app_path = os.path.join(os.path.dirname(__file__), "app", "streamlit_app.py")
     port = int(os.environ.get("FISH_COUNTER_PORT", "8501"))
     url = f"http://localhost:{port}"
-    open_browser = os.environ.get("FISH_COUNTER_OPEN_BROWSER", "0").lower() in {
+    default_open = "1" if getattr(sys, "frozen", False) else "0"
+    open_browser = os.environ.get("FISH_COUNTER_OPEN_BROWSER", default_open).lower() in {
         "1",
         "true",
         "yes",
     }
 
+    headless_mode = "false" if open_browser else "true"
     cli_args = [
         "streamlit",
         "run",
@@ -40,7 +42,7 @@ def main() -> int:
         "--server.port",
         str(port),
         "--server.headless",
-        "true",
+        headless_mode,
         "--global.developmentMode",
         "false",
     ]
