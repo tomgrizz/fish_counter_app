@@ -21,6 +21,7 @@ pyinstaller `
     --noconsole `
     --clean `
     --copy-metadata "streamlit" `
+    --collect-all "streamlit" `
     --add-data "app;app" `
     --add-data "requirements.txt;." `
     --distpath $DistDir `
