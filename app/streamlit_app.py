@@ -8,8 +8,11 @@ from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Fish Counter Review", layout="wide")
+
+VIDEO_MAX_HEIGHT_PX = 280
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
@@ -545,7 +548,55 @@ with left:
     st.subheader(f"Event {cur['event_id']}")
     st.caption(f"Timestamp: {cur['ts']}  |  Video: {cur['video_rel'] or '(not found)'}")
     if cur["has_video"] and cur["video_abs"]:
+        st.markdown(
+            f"""
+            <style>
+            .fish-video video {{
+                max-height: {VIDEO_MAX_HEIGHT_PX}px;
+                width: 100%;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div class="fish-video">', unsafe_allow_html=True)
         st.video(cur["video_abs"], autoplay=True, muted=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        components.html(
+            """
+            <script>
+            const tryAutoPlay = () => {
+              const video = window.parent.document.querySelector(".fish-video video");
+              if (!video) return;
+              video.muted = true;
+              video.setAttribute("playsinline", "");
+              video.setAttribute("webkit-playsinline", "");
+              const storageKey = "fish_counter_playback_rate";
+              const storedRate = window.localStorage.getItem(storageKey);
+              if (storedRate) {
+                const parsedRate = Number.parseFloat(storedRate);
+                if (!Number.isNaN(parsedRate)) {
+                  video.playbackRate = parsedRate;
+                }
+              }
+              if (!video.__fishCounterRateListenerAttached) {
+                video.addEventListener("ratechange", () => {
+                  window.localStorage.setItem(storageKey, video.playbackRate.toString());
+                });
+                video.__fishCounterRateListenerAttached = true;
+              }
+              const playPromise = video.play();
+              if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(() => {});
+              }
+            };
+            setTimeout(tryAutoPlay, 200);
+            setTimeout(tryAutoPlay, 1000);
+            </script>
+            """,
+            height=0,
+            width=0,
+        )
     else:
         st.warning("No video matched for this event ID.")
 
