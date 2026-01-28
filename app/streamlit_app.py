@@ -12,7 +12,7 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Fish Counter Review", layout="wide")
 
-VIDEO_MAX_HEIGHT_PX = 360
+VIDEO_MAX_HEIGHT_PX = 280
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
@@ -571,6 +571,20 @@ with left:
               video.muted = true;
               video.setAttribute("playsinline", "");
               video.setAttribute("webkit-playsinline", "");
+              const storageKey = "fish_counter_playback_rate";
+              const storedRate = window.localStorage.getItem(storageKey);
+              if (storedRate) {
+                const parsedRate = Number.parseFloat(storedRate);
+                if (!Number.isNaN(parsedRate)) {
+                  video.playbackRate = parsedRate;
+                }
+              }
+              if (!video.__fishCounterRateListenerAttached) {
+                video.addEventListener("ratechange", () => {
+                  window.localStorage.setItem(storageKey, video.playbackRate.toString());
+                });
+                video.__fishCounterRateListenerAttached = true;
+              }
               const playPromise = video.play();
               if (playPromise && typeof playPromise.catch === "function") {
                 playPromise.catch(() => {});
