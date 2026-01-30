@@ -12,7 +12,7 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Fish Counter Review", layout="wide")
 
-VIDEO_MAX_HEIGHT_PX = 280
+VIDEO_MAX_HEIGHT_PX = 200
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
@@ -810,7 +810,18 @@ summary_df = pd.DataFrame(
 if summary_df.empty:
     st.info("No fish counted yet.")
 else:
-    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+    summary_table = st.dataframe(
+        summary_df,
+        use_container_width=True,
+        hide_index=True,
+        selection_mode="single-row",
+        on_select="rerun",
+    )
+    if summary_table.selection.rows:
+        selected_event = summary_df.iloc[summary_table.selection.rows[0]]["Event #"]
+        st.session_state.current_event_id = str(selected_event)
+        st.session_state._loaded_event_id = None
+        st.rerun()
 
 with st.expander("Diagnostics", expanded=False):
     st.write(st.session_state.diagnostics)
