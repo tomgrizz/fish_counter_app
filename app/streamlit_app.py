@@ -412,6 +412,22 @@ def get_events_summary(conn: sqlite3.Connection) -> Dict[str, int]:
     return {"total_events": int(total), "with_video": int(with_video), "reviewed": int(reviewed)}
 
 
+def get_events_overview(conn: sqlite3.Connection) -> List[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT e.event_id, e.ts, e.video_rel, e.has_video,
+               s.reviewed_at, s.false_trigger, s.notes
+        FROM events e
+        LEFT JOIN event_status s ON s.event_id = e.event_id
+        ORDER BY
+          (e.ts IS NULL) ASC,
+          e.ts ASC,
+          CASE WHEN e.event_id GLOB '[0-9]*' THEN CAST(e.event_id AS INTEGER) END ASC,
+          e.event_id ASC
+        """
+    ).fetchall()
+
+
 def _clean_path(s: str) -> str:
     return (s or "").strip().strip('"')
 
@@ -426,6 +442,7 @@ def init_state() -> None:
         "ready": False,
         "queue": [],
         "current_event_id": None,
+        "selected_event_id": None,
         "categories": "Chinook,Rainbow,Atlantic,Brown,Coho,Unknown,Non fish",
         "movement": "Up",
         "notes": "",
@@ -511,6 +528,7 @@ if not st.session_state.ready:
 
 conn = connect_db(Path(st.session_state.db_path))
 summary = get_events_summary(conn)
+event_overview = get_events_overview(conn)
 
 # Refresh queue
 if not st.session_state.queue:
@@ -521,8 +539,63 @@ if st.session_state.current_event_id is None and st.session_state.queue:
     st.session_state.current_event_id = st.session_state.queue[0]
 
 event_id = st.session_state.current_event_id
+st.subheader("Event browser")
+filter_label = st.radio(
+    "Show",
+    options=["All", "Unreviewed", "Reviewed"],
+    horizontal=True,
+    index=0,
+)
+overview_records: List[Dict[str, object]] = []
+for row in event_overview:
+    reviewed = bool(row["reviewed_at"])
+    if filter_label == "Unreviewed" and reviewed:
+        continue
+    if filter_label == "Reviewed" and not reviewed:
+        continue
+    overview_records.append(
+        {
+            "Event #": row["event_id"],
+            "Time stamp": row["ts"],
+            "Video": row["video_rel"],
+            "Reviewed": row["reviewed_at"] or "",
+            "False trigger": int(row["false_trigger"] or 0),
+            "Notes": row["notes"] or "",
+        }
+    )
+
+overview_df = pd.DataFrame(
+    overview_records,
+    columns=["Event #", "Time stamp", "Video", "Reviewed", "False trigger", "Notes"],
+)
+if overview_df.empty:
+    st.info("No events match the selected filter.")
+else:
+    browser = st.dataframe(
+        overview_df,
+        use_container_width=True,
+        hide_index=True,
+        selection_mode="single-row",
+        on_select="rerun",
+    )
+    if browser.selection.rows:
+        st.session_state.selected_event_id = overview_df.iloc[browser.selection.rows[0]]["Event #"]
+
+    select_col, queue_col = st.columns([1, 1])
+    with select_col:
+        if st.button("Load selected event", use_container_width=True):
+            if st.session_state.selected_event_id:
+                st.session_state.current_event_id = str(st.session_state.selected_event_id)
+                st.session_state._loaded_event_id = None
+                st.rerun()
+    with queue_col:
+        if st.button("Resume next unreviewed", use_container_width=True):
+            st.session_state.current_event_id = st.session_state.queue[0] if st.session_state.queue else None
+            st.session_state._loaded_event_id = None
+            st.rerun()
+
 if event_id is None:
-    st.success("All events reviewed. Select an event from the counts summary to review again.")
+    st.success("All events reviewed. Select an event above to review again.")
 
 if event_id is not None:
     cur = get_event(conn, event_id)
@@ -554,7 +627,6 @@ if event_id is not None:
                 .fish-video video {{
                     max-height: {VIDEO_MAX_HEIGHT_PX}px;
                     width: 100%;
-                    height: {VIDEO_MAX_HEIGHT_PX}px;
                 }}
                 </style>
                 """,
