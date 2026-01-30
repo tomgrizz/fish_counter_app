@@ -13,6 +13,7 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Fish Counter Review", layout="wide")
 
 VIDEO_MAX_HEIGHT_PX = 200
+TITLE_FONT_SIZE_PX = 30
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
@@ -517,7 +518,19 @@ with st.sidebar:
         st.success(f"Indexed {len(rows)} events. Unreviewed: {len(q)}")
 
 
-st.title("Fish Counter Review")
+st.markdown(
+    f"""
+    <style>
+    .fish-counter-title {{
+        font-size: {TITLE_FONT_SIZE_PX}px;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }}
+    </style>
+    <div class="fish-counter-title">Fish Counter Review</div>
+    """,
+    unsafe_allow_html=True,
+)
 
 if not st.session_state.ready:
     st.info("Enter a project root folder in the sidebar and click 'Index / Reload project'.")
@@ -539,63 +552,8 @@ if st.session_state.current_event_id is None and st.session_state.queue:
     st.session_state.current_event_id = st.session_state.queue[0]
 
 event_id = st.session_state.current_event_id
-st.subheader("Event browser")
-filter_label = st.radio(
-    "Show",
-    options=["All", "Unreviewed", "Reviewed"],
-    horizontal=True,
-    index=0,
-)
-overview_records: List[Dict[str, object]] = []
-for row in event_overview:
-    reviewed = bool(row["reviewed_at"])
-    if filter_label == "Unreviewed" and reviewed:
-        continue
-    if filter_label == "Reviewed" and not reviewed:
-        continue
-    overview_records.append(
-        {
-            "Event #": row["event_id"],
-            "Time stamp": row["ts"],
-            "Video": row["video_rel"],
-            "Reviewed": row["reviewed_at"] or "",
-            "False trigger": int(row["false_trigger"] or 0),
-            "Notes": row["notes"] or "",
-        }
-    )
-
-overview_df = pd.DataFrame(
-    overview_records,
-    columns=["Event #", "Time stamp", "Video", "Reviewed", "False trigger", "Notes"],
-)
-if overview_df.empty:
-    st.info("No events match the selected filter.")
-else:
-    browser = st.dataframe(
-        overview_df,
-        use_container_width=True,
-        hide_index=True,
-        selection_mode="single-row",
-        on_select="rerun",
-    )
-    if browser.selection.rows:
-        st.session_state.selected_event_id = overview_df.iloc[browser.selection.rows[0]]["Event #"]
-
-    select_col, queue_col = st.columns([1, 1])
-    with select_col:
-        if st.button("Load selected event", use_container_width=True):
-            if st.session_state.selected_event_id:
-                st.session_state.current_event_id = str(st.session_state.selected_event_id)
-                st.session_state._loaded_event_id = None
-                st.rerun()
-    with queue_col:
-        if st.button("Resume next unreviewed", use_container_width=True):
-            st.session_state.current_event_id = st.session_state.queue[0] if st.session_state.queue else None
-            st.session_state._loaded_event_id = None
-            st.rerun()
-
 if event_id is None:
-    st.success("All events reviewed. Select an event above to review again.")
+    st.success("All events reviewed. Select an event from the counts summary to review again.")
 
 if event_id is not None:
     cur = get_event(conn, event_id)
@@ -627,6 +585,7 @@ if event_id is not None:
                 .fish-video video {{
                     max-height: {VIDEO_MAX_HEIGHT_PX}px;
                     width: 100%;
+                    height: {VIDEO_MAX_HEIGHT_PX}px;
                 }}
                 </style>
                 """,
@@ -812,7 +771,7 @@ if summary_df.empty:
 else:
     summary_table = st.dataframe(
         summary_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         selection_mode="single-row",
         on_select="rerun",
