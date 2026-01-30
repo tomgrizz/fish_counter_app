@@ -12,7 +12,8 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Fish Counter Review", layout="wide")
 
-VIDEO_MAX_HEIGHT_PX = 280
+VIDEO_MAX_HEIGHT_PX = 200
+TITLE_FONT_SIZE_PX = 30
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
@@ -500,7 +501,19 @@ with st.sidebar:
         st.success(f"Indexed {len(rows)} events. Unreviewed: {len(q)}")
 
 
-st.title("Fish Counter Review")
+st.markdown(
+    f"""
+    <style>
+    .fish-counter-title {{
+        font-size: {TITLE_FONT_SIZE_PX}px;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }}
+    </style>
+    <div class="fish-counter-title">Fish Counter Review</div>
+    """,
+    unsafe_allow_html=True,
+)
 
 if not st.session_state.ready:
     st.info("Enter a project root folder in the sidebar and click 'Index / Reload project'.")
@@ -522,182 +535,182 @@ if st.session_state.current_event_id is None and st.session_state.queue:
 
 event_id = st.session_state.current_event_id
 if event_id is None:
-    st.success("All events reviewed.")
-    st.stop()
+    st.success("All events reviewed. Select an event from the counts summary to review again.")
 
-cur = get_event(conn, event_id)
-if not cur:
-    st.error("Current event not found in database. Re-index the project.")
-    st.stop()
+if event_id is not None:
+    cur = get_event(conn, event_id)
+    if not cur:
+        st.error("Current event not found in database. Re-index the project.")
+        st.stop()
 
-# Load existing counts/status once per event change
-if st.session_state._loaded_event_id != event_id:
-    st.session_state._counts = load_counts(conn, event_id)
-    st.session_state._actions = []  # list of (species, movement)
-    st.session_state._status = load_status(conn, event_id)
-    st.session_state.notes = st.session_state._status.get("notes", "")
-    st.session_state._loaded_event_id = event_id
+    # Load existing counts/status once per event change
+    if st.session_state._loaded_event_id != event_id:
+        st.session_state._counts = load_counts(conn, event_id)
+        st.session_state._actions = []  # list of (species, movement)
+        st.session_state._status = load_status(conn, event_id)
+        st.session_state.notes = st.session_state._status.get("notes", "")
+        st.session_state._loaded_event_id = event_id
 
-counts: Dict[Tuple[str, str], int] = st.session_state._counts
-status = st.session_state._status
+    counts: Dict[Tuple[str, str], int] = st.session_state._counts
+    status = st.session_state._status
 
-# Main layout
-left, right = st.columns([2.2, 1.0], gap="large")
+    # Main layout
+    left, right = st.columns([2.2, 1.0], gap="large")
 
-with left:
-    st.subheader(f"Event {cur['event_id']}")
-    st.caption(f"Timestamp: {cur['ts']}  |  Video: {cur['video_rel'] or '(not found)'}")
-    if cur["has_video"] and cur["video_abs"]:
-        st.markdown(
-            f"""
-            <style>
-            .fish-video video {{
-                max-height: {VIDEO_MAX_HEIGHT_PX}px;
-                width: 100%;
-            }}
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.markdown('<div class="fish-video">', unsafe_allow_html=True)
-        st.video(cur["video_abs"], autoplay=True, muted=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        components.html(
-            """
-            <script>
-            const tryAutoPlay = () => {
-              const video = window.parent.document.querySelector(".fish-video video");
-              if (!video) return;
-              video.muted = true;
-              video.setAttribute("playsinline", "");
-              video.setAttribute("webkit-playsinline", "");
-              const storageKey = "fish_counter_playback_rate";
-              const storedRate = window.localStorage.getItem(storageKey);
-              if (storedRate) {
-                const parsedRate = Number.parseFloat(storedRate);
-                if (!Number.isNaN(parsedRate)) {
-                  video.playbackRate = parsedRate;
-                }
-              }
-              if (!video.__fishCounterRateListenerAttached) {
-                video.addEventListener("ratechange", () => {
-                  window.localStorage.setItem(storageKey, video.playbackRate.toString());
-                });
-                video.__fishCounterRateListenerAttached = true;
-              }
-              const playPromise = video.play();
-              if (playPromise && typeof playPromise.catch === "function") {
-                playPromise.catch(() => {});
-              }
-            };
-            setTimeout(tryAutoPlay, 200);
-            setTimeout(tryAutoPlay, 1000);
-            </script>
-            """,
-            height=0,
-            width=0,
-        )
-    else:
-        st.warning("No video matched for this event ID.")
-
-    # Note: counts shown include any in-progress clicks that have not yet been saved.
-    st.markdown("**Current tally:** " + format_counts(counts))
-    if status.get("reviewed_at"):
-        st.caption(f"Reviewed: {status.get('reviewed_at')}  |  False trigger: {status.get('false_trigger', 0)}")
-
-
-with right:
-    st.subheader("Count fish")
-
-    # Live, in-progress tally (what will be saved when you click Save & Next)
-    st.markdown("**Tally to be saved:** " + format_counts(counts))
-
-    # Movement selector (defaults to Up).
-    # User preference: show text for Up/Down, keep "x" as the stay toggle.
-    mv_label = st.radio(
-        "Movement",
-        options=["Up", "Down", "x"],
-        horizontal=True,
-        index={"Up": 0, "Down": 1, "Stay": 2}.get(st.session_state.movement, 0),
-        key="mv_radio",
-    )
-    movement = mv_label if mv_label != "x" else "Stay"
-    st.session_state.movement = movement
-
-    st.caption("Movement: Up = Upstream, Down = Downstream, x = Stay in frame")
-
-    cats = [c.strip() for c in (st.session_state.categories or "").split(",") if c.strip()]
-    if not cats:
-        cats = ["Chinook", "Rainbow", "Unknown", "Non fish"]
-
-    st.caption("Click species to add 1 fish at the selected movement. Use Undo for mistakes, then Save & Next.")
-
-    # Buttons grid
-    ncols = 2 if len(cats) <= 10 else 3
-    cols = st.columns(ncols)
-
-    def add_observation(species: str, mv: str) -> None:
-        key = (species, mv)
-        counts[key] = int(counts.get(key, 0)) + 1
-        st.session_state._actions.append(key)
-
-    clicked: Optional[str] = None
-    for i, cat in enumerate(cats):
-        with cols[i % ncols]:
-            if st.button(cat, use_container_width=True, key=f"sp_{event_id}_{i}"):
-                clicked = cat
-
-    if clicked is not None:
-        add_observation(clicked, movement)
-        st.rerun()
-
-    # Quick tools
-    b1, b2 = st.columns(2)
-    with b1:
-        if st.button("Undo", use_container_width=True):
-            if st.session_state._actions:
-                sp, mv = st.session_state._actions.pop()
-                counts[(sp, mv)] = max(int(counts.get((sp, mv), 0)) - 1, 0)
-            st.rerun()
-    with b2:
-        if st.button("Clear", use_container_width=True):
-            st.session_state._counts = {}
-            st.session_state._actions = []
-            st.rerun()
-
-    st.text_area("Notes (optional)", key="notes", height=80)
-
-    if st.button("Save & Next", type="primary", use_container_width=True):
-        reviewed_at = datetime.now().isoformat(timespec="seconds")
-        save_event(conn, event_id, counts, notes=str(st.session_state.notes or ""), false_trigger=0, reviewed_at=reviewed_at)
-        st.session_state.queue = get_unreviewed_event_ids(conn)
-        st.session_state.current_event_id = st.session_state.queue[0] if st.session_state.queue else None
-        st.session_state._loaded_event_id = None
-        st.rerun()
-
-    nav1, nav2 = st.columns(2)
-    with nav1:
-        if st.button("Back", use_container_width=True):
-            prev = conn.execute(
-                """
-                SELECT event_id FROM events
-                WHERE (ts < ? OR (ts = ? AND CAST(event_id AS INTEGER) < CAST(? AS INTEGER)))
-                ORDER BY ts DESC, CAST(event_id AS INTEGER) DESC
-                LIMIT 1
+    with left:
+        st.subheader(f"Event {cur['event_id']}")
+        st.caption(f"Timestamp: {cur['ts']}  |  Video: {cur['video_rel'] or '(not found)'}")
+        if cur["has_video"] and cur["video_abs"]:
+            st.markdown(
+                f"""
+                <style>
+                .fish-video video {{
+                    max-height: {VIDEO_MAX_HEIGHT_PX}px;
+                    width: 100%;
+                    height: {VIDEO_MAX_HEIGHT_PX}px;
+                }}
+                </style>
                 """,
-                (cur["ts"], cur["ts"], cur["event_id"]),
-            ).fetchone()
-            if prev:
-                st.session_state.current_event_id = prev[0]
-                st.session_state._loaded_event_id = None
+                unsafe_allow_html=True,
+            )
+            st.markdown('<div class="fish-video">', unsafe_allow_html=True)
+            st.video(cur["video_abs"], autoplay=True, muted=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+            components.html(
+                """
+                <script>
+                const tryAutoPlay = () => {
+                  const video = window.parent.document.querySelector(".fish-video video");
+                  if (!video) return;
+                  video.muted = true;
+                  video.setAttribute("playsinline", "");
+                  video.setAttribute("webkit-playsinline", "");
+                  const storageKey = "fish_counter_playback_rate";
+                  const storedRate = window.localStorage.getItem(storageKey);
+                  if (storedRate) {
+                    const parsedRate = Number.parseFloat(storedRate);
+                    if (!Number.isNaN(parsedRate)) {
+                      video.playbackRate = parsedRate;
+                    }
+                  }
+                  if (!video.__fishCounterRateListenerAttached) {
+                    video.addEventListener("ratechange", () => {
+                      window.localStorage.setItem(storageKey, video.playbackRate.toString());
+                    });
+                    video.__fishCounterRateListenerAttached = true;
+                  }
+                  const playPromise = video.play();
+                  if (playPromise && typeof playPromise.catch === "function") {
+                    playPromise.catch(() => {});
+                  }
+                };
+                setTimeout(tryAutoPlay, 200);
+                setTimeout(tryAutoPlay, 1000);
+                </script>
+                """,
+                height=0,
+                width=0,
+            )
+        else:
+            st.warning("No video matched for this event ID.")
+
+        # Note: counts shown include any in-progress clicks that have not yet been saved.
+        st.markdown("**Current tally:** " + format_counts(counts))
+        if status.get("reviewed_at"):
+            st.caption(f"Reviewed: {status.get('reviewed_at')}  |  False trigger: {status.get('false_trigger', 0)}")
+
+    with right:
+        st.subheader("Count fish")
+
+        # Live, in-progress tally (what will be saved when you click Save & Next)
+        st.markdown("**Tally to be saved:** " + format_counts(counts))
+
+        # Movement selector (defaults to Up).
+        # User preference: show text for Up/Down, keep "x" as the stay toggle.
+        mv_label = st.radio(
+            "Movement",
+            options=["Up", "Down", "x"],
+            horizontal=True,
+            index={"Up": 0, "Down": 1, "Stay": 2}.get(st.session_state.movement, 0),
+            key="mv_radio",
+        )
+        movement = mv_label if mv_label != "x" else "Stay"
+        st.session_state.movement = movement
+
+        st.caption("Movement: Up = Upstream, Down = Downstream, x = Stay in frame")
+
+        cats = [c.strip() for c in (st.session_state.categories or "").split(",") if c.strip()]
+        if not cats:
+            cats = ["Chinook", "Rainbow", "Unknown", "Non fish"]
+
+        st.caption("Click species to add 1 fish at the selected movement. Use Undo for mistakes, then Save & Next.")
+
+        # Buttons grid
+        ncols = 2 if len(cats) <= 10 else 3
+        cols = st.columns(ncols)
+
+        def add_observation(species: str, mv: str) -> None:
+            key = (species, mv)
+            counts[key] = int(counts.get(key, 0)) + 1
+            st.session_state._actions.append(key)
+
+        clicked: Optional[str] = None
+        for i, cat in enumerate(cats):
+            with cols[i % ncols]:
+                if st.button(cat, use_container_width=True, key=f"sp_{event_id}_{i}"):
+                    clicked = cat
+
+        if clicked is not None:
+            add_observation(clicked, movement)
+            st.rerun()
+
+        # Quick tools
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("Undo", use_container_width=True):
+                if st.session_state._actions:
+                    sp, mv = st.session_state._actions.pop()
+                    counts[(sp, mv)] = max(int(counts.get((sp, mv), 0)) - 1, 0)
                 st.rerun()
-    with nav2:
-        if st.button("Skip", use_container_width=True):
-            if st.session_state.queue and st.session_state.queue[0] == event_id:
-                st.session_state.queue = st.session_state.queue[1:]
+        with b2:
+            if st.button("Clear", use_container_width=True):
+                st.session_state._counts = {}
+                st.session_state._actions = []
+                st.rerun()
+
+        st.text_area("Notes (optional)", key="notes", height=80)
+
+        if st.button("Save & Next", type="primary", use_container_width=True):
+            reviewed_at = datetime.now().isoformat(timespec="seconds")
+            save_event(conn, event_id, counts, notes=str(st.session_state.notes or ""), false_trigger=0, reviewed_at=reviewed_at)
+            st.session_state.queue = get_unreviewed_event_ids(conn)
             st.session_state.current_event_id = st.session_state.queue[0] if st.session_state.queue else None
             st.session_state._loaded_event_id = None
             st.rerun()
+
+        nav1, nav2 = st.columns(2)
+        with nav1:
+            if st.button("Back", use_container_width=True):
+                prev = conn.execute(
+                    """
+                    SELECT event_id FROM events
+                    WHERE (ts < ? OR (ts = ? AND CAST(event_id AS INTEGER) < CAST(? AS INTEGER)))
+                    ORDER BY ts DESC, CAST(event_id AS INTEGER) DESC
+                    LIMIT 1
+                    """,
+                    (cur["ts"], cur["ts"], cur["event_id"]),
+                ).fetchone()
+                if prev:
+                    st.session_state.current_event_id = prev[0]
+                    st.session_state._loaded_event_id = None
+                    st.rerun()
+        with nav2:
+            if st.button("Skip", use_container_width=True):
+                if st.session_state.queue and st.session_state.queue[0] == event_id:
+                    st.session_state.queue = st.session_state.queue[1:]
+                st.session_state.current_event_id = st.session_state.queue[0] if st.session_state.queue else None
+                st.session_state._loaded_event_id = None
+                st.rerun()
 
 
 st.divider()
@@ -738,7 +751,18 @@ summary_df = pd.DataFrame(
 if summary_df.empty:
     st.info("No fish counted yet.")
 else:
-    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+    summary_table = st.dataframe(
+        summary_df,
+        width="stretch",
+        hide_index=True,
+        selection_mode="single-row",
+        on_select="rerun",
+    )
+    if summary_table.selection.rows:
+        selected_event = summary_df.iloc[summary_table.selection.rows[0]]["Event #"]
+        st.session_state.current_event_id = str(selected_event)
+        st.session_state._loaded_event_id = None
+        st.rerun()
 
 with st.expander("Diagnostics", expanded=False):
     st.write(st.session_state.diagnostics)
