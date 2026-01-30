@@ -773,18 +773,28 @@ summary_df = pd.DataFrame(
 if summary_df.empty:
     st.info("No fish counted yet.")
 else:
-    summary_df["Event Link"] = summary_df["Event #"].apply(lambda eid: f"?event_id={eid}")
     st.dataframe(
         summary_df,
         width="stretch",
         hide_index=True,
-        column_config={
-            "Event Link": st.column_config.LinkColumn(
-                "Open",
-                display_text="Open",
-            )
-        },
+        selection_mode="single-row",
+        on_select="rerun",
+        key="summary_table",
     )
+    selected_rows = (
+        st.session_state.get("summary_table", {})
+        .get("selection", {})
+        .get("rows", [])
+    )
+    if selected_rows:
+        selected_index = selected_rows[0]
+        if 0 <= selected_index < len(summary_df):
+            selected_event_id = summary_df.iloc[selected_index]["Event #"]
+            if st.session_state.get("current_event_id") != selected_event_id:
+                st.session_state.current_event_id = selected_event_id
+                st.session_state._loaded_event_id = None
+                st.query_params["event_id"] = selected_event_id
+                st.rerun()
 
 with st.expander("Diagnostics", expanded=False):
     st.write(st.session_state.diagnostics)
