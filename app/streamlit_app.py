@@ -444,7 +444,7 @@ def init_state() -> None:
         "queue": [],
         "current_event_id": None,
         "selected_event_id": None,
-        "categories": "Chinook,Rainbow,Atlantic,Brown,Coho,Unknown,Non fish",
+        "categories": "Chinook,Rainbow,Atlantic,Brown,Coho,Unknown,Non fish,Review",
         "movement": "Up",
         "notes": "",
         "_loaded_event_id": None,
