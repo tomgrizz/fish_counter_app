@@ -413,6 +413,22 @@ def get_events_summary(conn: sqlite3.Connection) -> Dict[str, int]:
     return {"total_events": int(total), "with_video": int(with_video), "reviewed": int(reviewed)}
 
 
+def get_events_overview(conn: sqlite3.Connection) -> List[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT e.event_id, e.ts, e.video_rel, e.has_video,
+               s.reviewed_at, s.false_trigger, s.notes
+        FROM events e
+        LEFT JOIN event_status s ON s.event_id = e.event_id
+        ORDER BY
+          (e.ts IS NULL) ASC,
+          e.ts ASC,
+          CASE WHEN e.event_id GLOB '[0-9]*' THEN CAST(e.event_id AS INTEGER) END ASC,
+          e.event_id ASC
+        """
+    ).fetchall()
+
+
 def _clean_path(s: str) -> str:
     return (s or "").strip().strip('"')
 
@@ -427,6 +443,7 @@ def init_state() -> None:
         "ready": False,
         "queue": [],
         "current_event_id": None,
+        "selected_event_id": None,
         "categories": "Chinook,Rainbow,Atlantic,Brown,Coho,Unknown,Non fish",
         "movement": "Up",
         "notes": "",
@@ -524,6 +541,7 @@ if not st.session_state.ready:
 
 conn = connect_db(Path(st.session_state.db_path))
 summary = get_events_summary(conn)
+event_overview = get_events_overview(conn)
 
 # Refresh queue
 if not st.session_state.queue:
