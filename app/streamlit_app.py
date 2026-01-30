@@ -456,6 +456,10 @@ def init_state() -> None:
 
 init_state()
 
+query_event_id = st.query_params.get("event_id")
+if query_event_id:
+    st.session_state.current_event_id = str(query_event_id)
+    st.session_state._loaded_event_id = None
 
 # Sidebar
 with st.sidebar:
@@ -769,18 +773,18 @@ summary_df = pd.DataFrame(
 if summary_df.empty:
     st.info("No fish counted yet.")
 else:
-    summary_table = st.dataframe(
+    summary_df["Event Link"] = summary_df["Event #"].apply(lambda eid: f"?event_id={eid}")
+    st.dataframe(
         summary_df,
         width="stretch",
         hide_index=True,
-        selection_mode="single-row",
-        on_select="rerun",
+        column_config={
+            "Event Link": st.column_config.LinkColumn(
+                "Open",
+                display_text="Open",
+            )
+        },
     )
-    if summary_table.selection.rows:
-        selected_event = summary_df.iloc[summary_table.selection.rows[0]]["Event #"]
-        st.session_state.current_event_id = str(selected_event)
-        st.session_state._loaded_event_id = None
-        st.rerun()
 
 with st.expander("Diagnostics", expanded=False):
     st.write(st.session_state.diagnostics)
