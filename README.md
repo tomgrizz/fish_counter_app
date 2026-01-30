@@ -26,8 +26,10 @@ pip install -r requirements.txt
 ## Run the app
 
 ```bash
-streamlit run app/streamlit_app.py
+python -m streamlit run app/streamlit_app.py
 ```
+
+If `streamlit` is not recognized as a command on Windows, use the `python -m` form above to invoke the package from your active virtual environment. Ensure the environment is activated before running the command.
 
 ## Build a Windows installer
 
