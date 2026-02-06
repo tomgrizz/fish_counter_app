@@ -689,9 +689,28 @@ if event_id is not None:
                   label.textContent = `Frame ${frame} / ${totalFrames} (${time.toFixed(2)}s)`;
                 };
 
+                const findVideoElement = () => {
+                  try {
+                    const container = window.parent.document.querySelector(".fish-video");
+                    if (!container) return null;
+                    const directVideo = container.querySelector("video");
+                    if (directVideo) return directVideo;
+                    const nestedFrame = container.querySelector("iframe");
+                    if (nestedFrame && nestedFrame.contentDocument) {
+                      return nestedFrame.contentDocument.querySelector("video");
+                    }
+                  } catch (error) {
+                    return null;
+                  }
+                  return null;
+                };
+
                 const tryAutoPlay = () => {
-                  const video = window.parent.document.querySelector(".fish-video video");
-                  if (!video) return false;
+                  const video = findVideoElement();
+                  if (!video) {
+                    label.textContent = "Video not ready";
+                    return false;
+                  }
                   video.muted = true;
                   video.setAttribute("playsinline", "");
                   video.setAttribute("webkit-playsinline", "");
