@@ -691,7 +691,7 @@ if event_id is not None:
 
                 const tryAutoPlay = () => {
                   const video = window.parent.document.querySelector(".fish-video video");
-                  if (!video) return;
+                  if (!video) return false;
                   video.muted = true;
                   video.setAttribute("playsinline", "");
                   video.setAttribute("webkit-playsinline", "");
@@ -710,6 +710,9 @@ if event_id is not None:
                   }
                   if (!video.__fishCounterControlsAttached) {
                     const initControls = () => {
+                      if (!video.duration || Number.isNaN(video.duration)) {
+                        return;
+                      }
                       const fps = resolveFps(video);
                       fpsInput.value = Math.round(fps).toString();
                       const totalFrames = Math.max(1, Math.ceil(video.duration * fps));
@@ -731,6 +734,9 @@ if event_id is not None:
                     };
 
                     video.addEventListener("loadedmetadata", initControls);
+                    if (video.readyState >= 1) {
+                      initControls();
+                    }
                     video.addEventListener("timeupdate", () => {
                       const fps = resolveFps(video);
                       const totalFrames = Math.max(1, Math.ceil(video.duration * fps));
@@ -754,6 +760,11 @@ if event_id is not None:
                       const fps = resolveFps(video);
                       const value = Number.parseFloat(event.target.value);
                       video.currentTime = clamp(value / fps, 0, video.duration || 0);
+                      updateLabel(
+                        Math.round(video.currentTime * fps),
+                        Math.max(1, Math.ceil(video.duration * fps)),
+                        video.currentTime,
+                      );
                     });
 
                     fpsInput.addEventListener("change", (event) => {
@@ -786,9 +797,15 @@ if event_id is not None:
                   if (playPromise && typeof playPromise.catch === "function") {
                     playPromise.catch(() => {});
                   }
+                  return true;
                 };
-                setTimeout(tryAutoPlay, 200);
-                setTimeout(tryAutoPlay, 1000);
+                const attachWhenReady = () => {
+                  if (!tryAutoPlay()) {
+                    window.requestAnimationFrame(attachWhenReady);
+                  }
+                };
+                setTimeout(attachWhenReady, 200);
+                setTimeout(attachWhenReady, 1000);
                 </script>
                 """,
                 height=140,
