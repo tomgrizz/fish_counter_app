@@ -8,7 +8,6 @@ from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Fish Counter Review", layout="wide")
 
@@ -448,6 +447,7 @@ def init_state() -> None:
         "movement": "Up",
         "notes": "",
         "_loaded_event_id": None,
+        "last_query_event_id": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -456,10 +456,23 @@ def init_state() -> None:
 
 init_state()
 
-query_event_id = st.query_params.get("event_id")
-if query_event_id:
-    st.session_state.current_event_id = str(query_event_id)
+
+def set_current_event_id(event_id: Optional[str]) -> None:
+    st.session_state.current_event_id = event_id
     st.session_state._loaded_event_id = None
+    if event_id:
+        event_id_str = str(event_id)
+        st.query_params["event_id"] = event_id_str
+        st.session_state.last_query_event_id = event_id_str
+    else:
+        if "event_id" in st.query_params:
+            del st.query_params["event_id"]
+        st.session_state.last_query_event_id = None
+
+
+query_event_id = st.query_params.get("event_id")
+if query_event_id and str(query_event_id) != st.session_state.last_query_event_id:
+    set_current_event_id(str(query_event_id))
 
 # Sidebar
 with st.sidebar:
@@ -514,10 +527,9 @@ with st.sidebar:
 
         st.session_state.db_path = str(db_path)
         st.session_state.queue = q
-        st.session_state.current_event_id = q[0] if q else None
+        set_current_event_id(q[0] if q else None)
         st.session_state.diagnostics = diag
         st.session_state.ready = True
-        st.session_state._loaded_event_id = None
 
         st.success(f"Indexed {len(rows)} events. Unreviewed: {len(q)}")
 
@@ -553,7 +565,7 @@ if not st.session_state.queue:
 
 # Ensure current
 if st.session_state.current_event_id is None and st.session_state.queue:
-    st.session_state.current_event_id = st.session_state.queue[0]
+    set_current_event_id(st.session_state.queue[0])
 
 event_id = st.session_state.current_event_id
 if event_id is None:
@@ -598,41 +610,6 @@ if event_id is not None:
             st.markdown('<div class="fish-video">', unsafe_allow_html=True)
             st.video(cur["video_abs"], autoplay=True, muted=True)
             st.markdown("</div>", unsafe_allow_html=True)
-            components.html(
-                """
-                <script>
-                const tryAutoPlay = () => {
-                  const video = window.parent.document.querySelector(".fish-video video");
-                  if (!video) return;
-                  video.muted = true;
-                  video.setAttribute("playsinline", "");
-                  video.setAttribute("webkit-playsinline", "");
-                  const storageKey = "fish_counter_playback_rate";
-                  const storedRate = window.localStorage.getItem(storageKey);
-                  if (storedRate) {
-                    const parsedRate = Number.parseFloat(storedRate);
-                    if (!Number.isNaN(parsedRate)) {
-                      video.playbackRate = parsedRate;
-                    }
-                  }
-                  if (!video.__fishCounterRateListenerAttached) {
-                    video.addEventListener("ratechange", () => {
-                      window.localStorage.setItem(storageKey, video.playbackRate.toString());
-                    });
-                    video.__fishCounterRateListenerAttached = true;
-                  }
-                  const playPromise = video.play();
-                  if (playPromise && typeof playPromise.catch === "function") {
-                    playPromise.catch(() => {});
-                  }
-                };
-                setTimeout(tryAutoPlay, 200);
-                setTimeout(tryAutoPlay, 1000);
-                </script>
-                """,
-                height=0,
-                width=0,
-            )
         else:
             st.warning("No video matched for this event ID.")
 
@@ -706,8 +683,7 @@ if event_id is not None:
             reviewed_at = datetime.now().isoformat(timespec="seconds")
             save_event(conn, event_id, counts, notes=str(st.session_state.notes or ""), false_trigger=0, reviewed_at=reviewed_at)
             st.session_state.queue = get_unreviewed_event_ids(conn)
-            st.session_state.current_event_id = st.session_state.queue[0] if st.session_state.queue else None
-            st.session_state._loaded_event_id = None
+            set_current_event_id(st.session_state.queue[0] if st.session_state.queue else None)
             st.rerun()
 
         nav1, nav2 = st.columns(2)
@@ -723,15 +699,13 @@ if event_id is not None:
                     (cur["ts"], cur["ts"], cur["event_id"]),
                 ).fetchone()
                 if prev:
-                    st.session_state.current_event_id = prev[0]
-                    st.session_state._loaded_event_id = None
+                    set_current_event_id(prev[0])
                     st.rerun()
         with nav2:
             if st.button("Skip", use_container_width=True):
                 if st.session_state.queue and st.session_state.queue[0] == event_id:
                     st.session_state.queue = st.session_state.queue[1:]
-                st.session_state.current_event_id = st.session_state.queue[0] if st.session_state.queue else None
-                st.session_state._loaded_event_id = None
+                set_current_event_id(st.session_state.queue[0] if st.session_state.queue else None)
                 st.rerun()
 
 
@@ -791,9 +765,7 @@ else:
         if 0 <= selected_index < len(summary_df):
             selected_event_id = summary_df.iloc[selected_index]["Event #"]
             if st.session_state.get("current_event_id") != selected_event_id:
-                st.session_state.current_event_id = selected_event_id
-                st.session_state._loaded_event_id = None
-                st.query_params["event_id"] = selected_event_id
+                set_current_event_id(selected_event_id)
                 st.rerun()
 
 with st.expander("Diagnostics", expanded=False):
