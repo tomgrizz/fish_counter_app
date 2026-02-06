@@ -613,15 +613,108 @@ if event_id is not None:
             st.markdown("</div>", unsafe_allow_html=True)
             components.html(
                 """
+                <style>
+                .fish-video-controls {
+                  display: flex;
+                  flex-wrap: wrap;
+                  align-items: center;
+                  gap: 8px;
+                  padding: 8px 10px;
+                  background: #f6f7f9;
+                  border: 1px solid #e1e5ea;
+                  border-radius: 8px;
+                  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+                  font-size: 12px;
+                }
+                .fish-video-controls button {
+                  padding: 4px 8px;
+                  border: 1px solid #c8d0da;
+                  border-radius: 6px;
+                  background: #ffffff;
+                  cursor: pointer;
+                }
+                .fish-video-controls button:hover {
+                  background: #eef2f6;
+                }
+                .fish-video-controls input[type="range"] {
+                  flex: 1 1 220px;
+                  min-width: 180px;
+                }
+                .fish-video-controls .fish-video-label {
+                  min-width: 140px;
+                  font-variant-numeric: tabular-nums;
+                }
+                .fish-video-controls .fish-video-fps {
+                  width: 64px;
+                }
+                </style>
+                <div class="fish-video-controls">
+                  <button type="button" data-action="prev-frame">Prev Frame</button>
+                  <button type="button" data-action="next-frame">Next Frame</button>
+                  <button type="button" data-action="back-1s">-1s</button>
+                  <button type="button" data-action="forward-1s">+1s</button>
+                  <input id="fish-video-slider" type="range" min="0" max="100" step="1" value="0" />
+                  <span class="fish-video-label" id="fish-video-label">Frame 0</span>
+                  <label>
+                    FPS
+                    <input id="fish-video-fps" class="fish-video-fps" type="number" min="1" max="240" step="1" />
+                  </label>
+                </div>
                 <script>
+                const playbackRateKey = "fish_counter_playback_rate";
+                const fpsStorageKey = "fish_counter_video_fps";
+                const defaultFps = 30;
+                const slider = document.getElementById("fish-video-slider");
+                const label = document.getElementById("fish-video-label");
+                const fpsInput = document.getElementById("fish-video-fps");
+
+                const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+                const resolveFps = (video) => {
+                  const storedFps = window.localStorage.getItem(fpsStorageKey);
+                  const storedValue = storedFps ? Number.parseFloat(storedFps) : NaN;
+                  if (!Number.isNaN(storedValue) && storedValue > 0) {
+                    return storedValue;
+                  }
+                  if (video.getVideoPlaybackQuality) {
+                    const quality = video.getVideoPlaybackQuality();
+                    if (quality && quality.totalVideoFrames && video.duration) {
+                      return Math.max(1, quality.totalVideoFrames / video.duration);
+                    }
+                  }
+                  return defaultFps;
+                };
+
+                const updateLabel = (frame, totalFrames, time) => {
+                  label.textContent = `Frame ${frame} / ${totalFrames} (${time.toFixed(2)}s)`;
+                };
+
+                const findVideoElement = () => {
+                  try {
+                    const container = window.parent.document.querySelector(".fish-video");
+                    if (!container) return null;
+                    const directVideo = container.querySelector("video");
+                    if (directVideo) return directVideo;
+                    const nestedFrame = container.querySelector("iframe");
+                    if (nestedFrame && nestedFrame.contentDocument) {
+                      return nestedFrame.contentDocument.querySelector("video");
+                    }
+                  } catch (error) {
+                    return null;
+                  }
+                  return null;
+                };
+
                 const tryAutoPlay = () => {
-                  const video = window.parent.document.querySelector(".fish-video video");
-                  if (!video) return;
+                  const video = findVideoElement();
+                  if (!video) {
+                    label.textContent = "Video not ready";
+                    return false;
+                  }
                   video.muted = true;
                   video.setAttribute("playsinline", "");
                   video.setAttribute("webkit-playsinline", "");
-                  const storageKey = "fish_counter_playback_rate";
-                  const storedRate = window.localStorage.getItem(storageKey);
+                  const storedRate = window.localStorage.getItem(playbackRateKey);
                   if (storedRate) {
                     const parsedRate = Number.parseFloat(storedRate);
                     if (!Number.isNaN(parsedRate)) {
@@ -630,21 +723,111 @@ if event_id is not None:
                   }
                   if (!video.__fishCounterRateListenerAttached) {
                     video.addEventListener("ratechange", () => {
-                      window.localStorage.setItem(storageKey, video.playbackRate.toString());
+                      window.localStorage.setItem(playbackRateKey, video.playbackRate.toString());
                     });
                     video.__fishCounterRateListenerAttached = true;
+                  }
+                  if (!video.__fishCounterControlsAttached) {
+                    const initControls = () => {
+                      if (!video.duration || Number.isNaN(video.duration)) {
+                        return;
+                      }
+                      const fps = resolveFps(video);
+                      fpsInput.value = Math.round(fps).toString();
+                      const totalFrames = Math.max(1, Math.ceil(video.duration * fps));
+                      slider.max = totalFrames.toString();
+                      const frame = Math.round(video.currentTime * fps);
+                      slider.value = frame.toString();
+                      updateLabel(frame, totalFrames, video.currentTime);
+                    };
+
+                    const stepVideo = (seconds) => {
+                      const fps = resolveFps(video);
+                      const totalFrames = Math.max(1, Math.ceil(video.duration * fps));
+                      video.pause();
+                      const nextTime = clamp(video.currentTime + seconds, 0, video.duration || 0);
+                      video.currentTime = nextTime;
+                      const frame = Math.round(nextTime * fps);
+                      slider.value = clamp(frame, 0, totalFrames).toString();
+                      updateLabel(frame, totalFrames, nextTime);
+                    };
+
+                    video.addEventListener("loadedmetadata", initControls);
+                    if (video.readyState >= 1) {
+                      initControls();
+                    }
+                    video.addEventListener("timeupdate", () => {
+                      const fps = resolveFps(video);
+                      const totalFrames = Math.max(1, Math.ceil(video.duration * fps));
+                      const frame = Math.round(video.currentTime * fps);
+                      slider.value = clamp(frame, 0, totalFrames).toString();
+                      updateLabel(frame, totalFrames, video.currentTime);
+                    });
+                    if (video.requestVideoFrameCallback) {
+                      const frameCallback = () => {
+                        const fps = resolveFps(video);
+                        const totalFrames = Math.max(1, Math.ceil(video.duration * fps));
+                        const frame = Math.round(video.currentTime * fps);
+                        slider.value = clamp(frame, 0, totalFrames).toString();
+                        updateLabel(frame, totalFrames, video.currentTime);
+                        video.requestVideoFrameCallback(frameCallback);
+                      };
+                      video.requestVideoFrameCallback(frameCallback);
+                    }
+
+                    slider.addEventListener("input", (event) => {
+                      const fps = resolveFps(video);
+                      const value = Number.parseFloat(event.target.value);
+                      video.currentTime = clamp(value / fps, 0, video.duration || 0);
+                      updateLabel(
+                        Math.round(video.currentTime * fps),
+                        Math.max(1, Math.ceil(video.duration * fps)),
+                        video.currentTime,
+                      );
+                    });
+
+                    fpsInput.addEventListener("change", (event) => {
+                      const value = Number.parseFloat(event.target.value);
+                      if (!Number.isNaN(value) && value > 0) {
+                        window.localStorage.setItem(fpsStorageKey, value.toString());
+                      }
+                      initControls();
+                    });
+
+                    document.querySelectorAll(".fish-video-controls button").forEach((button) => {
+                      button.addEventListener("click", () => {
+                        const action = button.dataset.action;
+                        const fps = resolveFps(video);
+                        if (action === "prev-frame") {
+                          stepVideo(-1 / fps);
+                        } else if (action === "next-frame") {
+                          stepVideo(1 / fps);
+                        } else if (action === "back-1s") {
+                          stepVideo(-1);
+                        } else if (action === "forward-1s") {
+                          stepVideo(1);
+                        }
+                      });
+                    });
+
+                    video.__fishCounterControlsAttached = true;
                   }
                   const playPromise = video.play();
                   if (playPromise && typeof playPromise.catch === "function") {
                     playPromise.catch(() => {});
                   }
+                  return true;
                 };
-                setTimeout(tryAutoPlay, 200);
-                setTimeout(tryAutoPlay, 1000);
+                const attachWhenReady = () => {
+                  if (!tryAutoPlay()) {
+                    window.requestAnimationFrame(attachWhenReady);
+                  }
+                };
+                setTimeout(attachWhenReady, 200);
+                setTimeout(attachWhenReady, 1000);
                 </script>
                 """,
-                height=0,
-                width=0,
+                height=140,
             )
         else:
             st.warning("No video matched for this event ID.")
